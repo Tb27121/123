@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>小朋友下樓梯 - 新角色版</title>
+    <style>
+        body { 
+            display: flex; flex-direction: column; align-items: center; 
+            background: #1a1a1a; color: white; font-family: sans-serif; 
+            margin: 0; overflow: hidden;
+        }
+        #game-container { position: relative; margin-top: 20px; }
+        canvas { border: 4px solid #444; background: #000; display: block; }
+        #ui-overlay {
+            display: none; position: absolute;
+            top: 0; left: 0; width: 400px; height: 500px;
+            background: rgba(0, 0, 0, 0.8);
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        button {
+            padding: 20px 40px; font-size: 24px; cursor: pointer;
+            background: #00ff00; border: none; font-weight: bold; 
+            border-radius: 10px; color: black;
+        }
+    </style>
+</head>
+<body>
+
+    <div style="font-size: 24px; margin: 10px;">
+        HP: <span id="hp" style="color:#0f0">10</span> | Score: <span id="score">0</span>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="400" height="500"></canvas>
+        <div id="ui-overlay">
+            <h1 style="color: white; margin-bottom: 20px;">GAME OVER</h1>
+            <button id="restartBtn">RESTART</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const ui = document.getElementById('ui-overlay');
+    const restartBtn = document.getElementById('restartBtn');
+
+    let hp, player, platforms, frameCount, score, isGameOver, animationId;
+    let invincibilityTimer = 0;
+
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function init() {
+        if (animationId) cancelAnimationFrame(animationId);
+        hp = 10; score = 0; frameCount = 0; isGameOver = false; invincibilityTimer = 0;
+        platforms = [];
+        // 新增 dir 屬性紀錄方向 (1 為右, -1 為左)
+        player = { x: 190, y: 100, width: 24, height: 32, vy: 0, speed: 6, dir: 1 };
+        ui.style.display = 'none';
+        platforms.push({ x: 150, y: 200, width: 100, height: 12, type: 'normal', timer: -1, isStepped: false });
+        gameLoop();
+    }
+
+    function update() {
+        if (isGameOver) return;
+        if (invincibilityTimer > 0) invincibilityTimer--;
+
+        if (keys['ArrowLeft'] && player.x > 0) {
+            player.x -= player.speed;
+            player.dir = -1;
+        }
+        if (keys['ArrowRight'] && player.x < canvas.width - player.width) {
+            player.x += player.speed;
+            player.dir = 1;
+        }
+
+        player.vy += 0.5; player.y += player.vy;
+
+        platforms.forEach(p => {
+            p.y -= 2 + (score / 350); 
+            if (p.type === 'blue' && p.isStepped && p.timer > 0) p.timer--;
+
+            if (player.vy >= 0 && 
+                player.x + player.width > p.x && 
+                player.x < p.x + p.width &&
+                player.y + player.height >= p.y && 
+                player.y + player.height <= p.y + p.height + player.vy) {
+                
+                player.y = p.y - player.height;
+                player.vy = 0;
+
+                if (p.type === 'spike' && invincibilityTimer === 0) {
+                    hp -= 1; invincibilityTimer = 60;
+                }
+                if (p.type === 'blue' && !p.isStepped) {
+                    p.isStepped = true;
+                    p.timer = 180; 
+                }
+            }
+        });
+
+        if (frameCount % 45 === 0) {
+            const rand = Math.random();
+            let type = rand > 0.85 ? 'spike' : (rand > 0.65 ? 'blue' : 'normal');
+            platforms.push({
+                x: Math.random() * (canvas.width - 80),
+                y: canvas.height,
+                width: 80, height: 12,
+                type: type, timer: type === 'blue' ? 180 : -1, isStepped: false
+            });
+            score++;
+        }
+
+        if (player.y < 25) { 
+            player.y = 25; player.vy = 4; 
+            if (invincibilityTimer === 0) { hp -= 1; invincibilityTimer = 90; }
+        }
+
+        platforms = platforms.filter(p => p.y + p.height > 0 && (p.timer === -1 || p.timer > 0));
+
+        if (player.y > canvas.height || hp <= 0) {
+            isGameOver = true;
+            ui.style.display = 'flex';
+        }
+
+        document.getElementById('hp').innerText = Math.max(0, Math.ceil(hp));
+        document.getElementById('score').innerText = score;
+        frameCount++;
+    }
+
+    // --- 繪製角色的函數 ---
+    function drawPlayer(x, y, dir, timer) {
+        if (timer % 10 < 5) {
+            // 身體 (藍色衣服)
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(x + 4, y + 14, 16, 12);
+            
+            // 頭部 (膚色)
+            ctx.fillStyle = '#ffdbac';
+            ctx.fillRect(x + 6, y + 4, 12, 12);
+            
+            // 帽子 (紅色)
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(x + 4, y, 16, 6);
+            
+            // 眼睛 (黑色)
+            ctx.fillStyle = '#000';
+            const eyeX = dir === 1 ? x + 14 : x + 8;
+            ctx.fillRect(eyeX, y + 8, 2, 2);
+
+            // 腳部 (深色)
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(x + 4, y + 26, 6, 6);
+            ctx.fillRect(x + 14, y + 26, 6, 6);
+        }
+    }
+
+    function draw() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#444';
+        for(let i=0; i<canvas.width; i+=20) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0); ctx.lineTo(i+10, 25); ctx.lineTo(i+20, 0); ctx.fill();
+        }
+
+        platforms.forEach(p => {
+            if (p.type === 'spike') ctx.fillStyle = '#ff4444';
+            else if (p.type === 'blue') {
+                if (p.isStepped && p.timer < 60 && Math.floor(p.timer / 5) % 2 === 0) ctx.fillStyle = '#1a1a1a';
+                else ctx.fillStyle = '#4444ff';
+            }
+            else ctx.fillStyle = '#ffffff';
+            ctx.fillRect(p.x, p.y, p.width, p.height);
+        });
+
+        // 呼叫繪製角色函數
+        drawPlayer(player.x, player.y, player.dir, invincibilityTimer);
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        if (!isGameOver) animationId = requestAnimationFrame(gameLoop);
+    }
+
+    restartBtn.onclick = init;
+    init();
+</script>
+</body>
+</html>
